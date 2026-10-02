@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bully Hits</title>
+<style>
+  :root { --bg:#1e2a44; --card:#2b3b5e; --accent:#ffcc33; --text:#fff; --hole:#12192b; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+         font-family:system-ui,sans-serif; display:flex; flex-direction:column; align-items:center; padding:16px; user-select:none; }
+  h1 { margin:8px 0 4px; letter-spacing:2px; color:var(--accent); }
+  .hud { display:flex; gap:24px; font-size:1.2rem; margin:8px 0 16px; }
+  .hud b { color:var(--accent); }
+  .grid { display:grid; grid-template-columns:repeat(3,minmax(80px,120px)); gap:14px; }
+  .hole { aspect-ratio:1; background:var(--hole); border-radius:50%/40%; position:relative; overflow:hidden; cursor:pointer; }
+  .char { position:absolute; inset:auto 10% -100% 10%; height:80%; display:flex; align-items:center; justify-content:center;
+          font-size:clamp(2.5rem,10vw,4rem); transition:bottom .12s, inset .12s; bottom:-100%; }
+  .hole.up .char { bottom:5%; }
+  .hole.hit .char { filter:drop-shadow(0 0 8px #f55); transform:rotate(-20deg) scale(.9); }
+  .hole.oops .char { filter:drop-shadow(0 0 8px #5af); }
+  .pop { position:absolute; top:4px; left:0; right:0; text-align:center; font-weight:bold; pointer-events:none; animation:fl .6s forwards; }
+  @keyframes fl { to { transform:translateY(-20px); opacity:0; } }
+  button { margin-top:20px; padding:12px 28px; font-size:1.1rem; border:0; border-radius:10px; background:var(--accent); color:#222; cursor:pointer; font-weight:bold; }
+  #msg { margin-top:14px; min-height:1.5em; text-align:center; }
+  p.help { max-width:360px; text-align:center; opacity:.8; font-size:.9rem; }
+</style>
+</head>
+<body>
+<h1>BULLY HITS</h1>
+<p class="help">Bonk the bullies 😈👹 before they hide. Don't hit the friendly kids 🙂 — that costs you points.</p>
+<div class="hud">
+  <div>Score: <b id="score">0</b></div>
+  <div>Time: <b id="time">30</b></div>
+  <div>Best: <b id="best">0</b></div>
+</div>
+<div class="grid" id="grid"></div>
+<button id="start">Start</button>
+<div id="msg"></div>
+
+<script>
+const BULLIES = ['😈','👹','😠','🤬'];
+const FRIENDS = ['🙂','😊','🤓'];
+const ROUND = 30;
+const grid = document.getElementById('grid');
+const $ = id => document.getElementById(id);
+let holes = [], score = 0, timeLeft = 0, running = false, tickTimer, spawnTimer;
+let best = 0;
+try { best = +localStorage.getItem('bullyHitsBest') || 0; } catch (e) {}
+$('best').textContent = best;
+
+for (let i = 0; i < 9; i++) {
+  const h = document.createElement('div');
+  h.className = 'hole';
+  h.innerHTML = '<div class="char"></div>';
+  h.addEventListener('pointerdown', () => whack(h));
+  grid.appendChild(h);
+  holes.push({ el: h, state: null, timer: null });
+}
+
+function popText(hole, text, color) {
+  const p = document.createElement('div');
+  p.className = 'pop'; p.textContent = text; p.style.color = color;
+  hole.el.appendChild(p);
+  setTimeout(() => p.remove(), 600);
+}
+
+function hide(hole) {
+  clearTimeout(hole.timer);
+  hole.state = null;
+  hole.el.classList.remove('up', 'hit', 'oops');
+}
+
+function spawn() {
+  if (!running) return;
+  const free = holes.filter(h => !h.state);
+  if (free.length) {
+    const hole = free[Math.floor(Math.random() * free.length)];
+    const friend = Math.random() < 0.25;
+    const list = friend ? FRIENDS : BULLIES;
+    hole.state = friend ? 'friend' : 'bully';
+    hole.el.querySelector('.char').textContent = list[Math.floor(Math.random() * list.length)];
+    hole.el.classList.add('up');
+    const stay = Math.max(450, 1000 - (ROUND - timeLeft) * 18);
+    hole.timer = setTimeout(() => hide(hole), stay);
+  }
+  const gap = Math.max(300, 800 - (ROUND - timeLeft) * 15);
+  spawnTimer = setTimeout(spawn, gap);
+}
+
+function whack(el) {
+  if (!running) return;
+  const hole = holes.find(h => h.el === el);
+  if (!hole.state) return;
+  if (hole.state === 'bully') {
+    score += 10; popText(hole, 'BONK! +10', '#ff8');
+    el.classList.add('hit');
+  } else {
+    score = Math.max(0, score - 15); popText(hole, 'Oops! -15', '#8cf');
+    el.classList.add('oops');
+  }
+  $('score').textContent = score;
+  hole.state = null;
+  clearTimeout(hole.timer);
+  hole.timer = setTimeout(() => hide(hole), 250);
+}
+
+function end() {
+  running = false;
+  clearTimeout(spawnTimer); clearInterval(tickTimer);
+  holes.forEach(hide);
+  let text = `Time's up! Final score: ${score}.`;
+  if (score > best) {
+    best = score; $('best').textContent = best; text += ' New best! 🏆';
+    try { localStorage.setItem('bullyHitsBest', best); } catch (e) {}
+  }
+  $('msg').textContent = text;
+  $('start').disabled = false; $('start').textContent = 'Play again';
+}
+
+$('start').addEventListener('click', () => {
+  score = 0; timeLeft = ROUND; running = true;
+  $('score').textContent = 0; $('time').textContent = timeLeft; $('msg').textContent = '';
+  $('start').disabled = true;
+  tickTimer = setInterval(() => {
+    timeLeft--; $('time').textContent = timeLeft;
+    if (timeLeft <= 0) end();
+  }, 1000);
+  spawn();
+});
+</script>
+</body>
+</html>
